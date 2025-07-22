@@ -1,0 +1,7 @@
+.venv
+*.wav
+*.pkl
+*.npz
+*.csv
+.vscode
+__*
