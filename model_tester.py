@@ -113,9 +113,21 @@ ml_est = model.predict([[tau21, tau31]])[0]
 err_raw = np.linalg.norm(raw_est - B)
 err_ml  = np.linalg.norm(ml_est  - B)
 
+# --- Angle errors ---
+def compute_angle_error(est, true_pos):
+    angle_est  = np.arctan2(est[1], est[0])
+    angle_true = np.arctan2(true_pos[1], true_pos[0])
+    angle_err_deg = np.rad2deg(angle_est - angle_true)
+    # Normalize to [-180, 180]
+    angle_err_deg = (angle_err_deg + 180) % 360 - 180
+    return abs(angle_err_deg)
+
+angle_err_raw = compute_angle_error(raw_est, B)
+angle_err_ml  = compute_angle_error(ml_est, B)
+
 # 9) Report
 print(f"True position:             [{B[0]:.3f}, {B[1]:.3f}]")
-print(f"Raw estimate:              [{raw_est[0]:.3f}, {raw_est[1]:.3f}], error = {err_raw:.3f} m")
-print(f"ML-corrected estimate:     [{ml_est[0]:.3f}, {ml_est[1]:.3f}], error = {err_ml:.3f} m")
+print(f"Raw estimate:              [{raw_est[0]:.3f}, {raw_est[1]:.3f}], error = {err_raw:.3f} m, angle error = {angle_err_raw:.2f}°")
+print(f"ML-corrected estimate:     [{ml_est[0]:.3f}, {ml_est[1]:.3f}], error = {err_ml:.3f} m, angle error = {angle_err_ml:.2f}°")
 error_reduction = 100 * (err_raw - err_ml) / err_raw
 print(f"Percent error reduction:   {error_reduction:.2f}%")
