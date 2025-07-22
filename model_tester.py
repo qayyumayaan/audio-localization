@@ -37,8 +37,8 @@ def posError(pos, d21, d31, mic_positions, max_r=1000.0):
     return (d2 - d1 - d21)**2 + (d3 - d1 - d31)**2
 
 def triangulatePosition(audio, mic_positions, max_tau=None):
-    """TDOA‑based triangulation with a hard 1000 m radius limit."""
-    v_sound = 343.0
+    """TDOA-based triangulation with a hard 1000m radius limit."""
+    v_sound = config.SPEED_OF_SOUND
     (fs1, sig1), (fs2, sig2), (fs3, sig3) = audio
     tau21 = gcc_phat(sig2, sig1, fs=fs1, max_tau=max_tau)
     tau31 = gcc_phat(sig3, sig1, fs=fs1, max_tau=max_tau)
