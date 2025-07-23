@@ -81,10 +81,12 @@ B = sample_source_positions(1, r_min, r_max)[0]
 _, mics = triangle_coords_centered(side_length)
 mic_positions = [m.tolist() for m in mics]
 
-# 3) Wideband chirp ping
+# 3) Ping tone
 duration = 0.05
-t = np.linspace(0, duration, int(fs*duration), endpoint=False)
-signal = chirp(t, f0=500, f1=5000, t1=duration, method='linear')
+t         = np.linspace(0, duration, int(fs * duration), endpoint=False)
+frequency = 5000  # Hz
+# signal = chirp(t, f0=500, f1=5000, t1=duration, method='linear') # Chirp signal
+signal    = np.sin(2 * np.pi * frequency * t) # Single tone
 
 # 4) Simulate delays
 distances     = [np.linalg.norm(B - m) for m in mics]
@@ -120,7 +122,7 @@ tau21 = gcc_phat(audio[1][1], audio[0][1], fs, max_tau=max_tau)
 tau31 = gcc_phat(audio[2][1], audio[0][1], fs, max_tau=max_tau)
 
 # 3) ML prediction
-model  = joblib.load(f'ping_localization_model_fs{fs}.pkl')
+model  = joblib.load(f'ping_localization_model_d{int(config.SIDE_LENGTH*1000)}mm_fs{fs}.pkl')
 ml_est = model.predict([[tau21, tau31]])[0]
 
 # 4) Compute errors
@@ -133,8 +135,8 @@ angle_err_ml  = compute_angle_error(ml_est,  B)
 
 # 6) Report
 print(f"True position:  [{B[0]:.3f}, {B[1]:.3f}]")
-print(f"Raw estimate:   [{raw_est[0]:.3f}, {raw_est[1]:.3f}], err = {err_raw:.3f} m, θ_err = {angle_err_raw:.2f}°")
-print(f"ML estimate:    [{ml_est[0]:.3f}, {ml_est[1]:.3f}], err = {err_ml:.3f} m, θ_err = {angle_err_ml:.2f}°")
+print(f"Raw estimate:   [{raw_est[0]:.3f}, {raw_est[1]:.3f}], err = {err_raw:.3f} m, θ_err = {angle_err_raw:.2f}°")
+print(f"ML estimate:    [{ml_est[0]:.3f}, {ml_est[1]:.3f}], err = {err_ml:.3f} m, θ_err = {angle_err_ml:.2f}°")
 
 within = err_ml <= config.ACCURACY_RADIUS
 print(f"Within ±{config.ACCURACY_RADIUS} m accuracy radius? {'Yes' if within else 'No'}")
