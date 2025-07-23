@@ -42,11 +42,8 @@ def generate_synthetic_dataset(num_samples=10000,
     tau21_true = (d2 - d1) / speed_of_sound
     tau31_true = (d3 - d1) / speed_of_sound
 
-    # Simulate quantization at sampling rate fs
-    sample_tau21 = np.round(tau21_true * fs).astype(int)
-    sample_tau31 = np.round(tau31_true * fs).astype(int)
-    tau21 = sample_tau21 / fs
-    tau31 = sample_tau31 / fs
+    tau21 = tau21_true 
+    tau31 = tau31_true 
 
     # Add optional noise AFTER quantization (if desired)
     if noise_std > 0:
