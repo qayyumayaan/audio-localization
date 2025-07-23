@@ -18,13 +18,15 @@ def sample_source_positions(num_points, r_min, r_max, angle_bounds=(-30, 90)):
     y = radii * np.sin(angles)
     return np.stack((x, y), axis=1)
 
-def generate_synthetic_dataset(num_samples=10000,
-                               side_length=0.045,
-                               r_min=1.0,
-                               r_max=5.0,
-                               speed_of_sound=343.0,
-                               noise_std=0.0,
-                               fs=44100):  
+def generate_synthetic_dataset(
+    num_samples   = config.NUM_SAMPLES,
+    side_length   = config.SIDE_LENGTH,
+    r_min         = config.PING_RADIUS_MIN,
+    r_max         = config.PING_RADIUS_MAX,
+    speed_of_sound= config.SPEED_OF_SOUND,
+    noise_std     = config.NOISE_STD,
+    fs            = config.SAMPLE_RATE_FS
+):
     """
     Generate synthetic single-ping TDOA training data.
     Simulates quantized TDOA measurement as it would appear at a given sampling rate.
@@ -36,45 +38,35 @@ def generate_synthetic_dataset(num_samples=10000,
     # Source positions
     sources = sample_source_positions(num_samples, r_min, r_max)
 
-    # Distances and TDOAs
-    dists = np.linalg.norm(sources[:, None, :] - mics[None, :, :], axis=2)
-    d1, d2, d3 = dists[:, 0], dists[:, 1], dists[:, 2]
-    tau21_true = (d2 - d1) / speed_of_sound
-    tau31_true = (d3 - d1) / speed_of_sound
+    # True TDOAs
+    dists       = np.linalg.norm(sources[:, None, :] - mics[None, :, :], axis=2)
+    tau21_true  = (dists[:,1] - dists[:,0]) / speed_of_sound
+    tau31_true  = (dists[:,2] - dists[:,0]) / speed_of_sound
 
-    tau21 = tau21_true 
-    tau31 = tau31_true 
+    # Use the true (float) delays directly
+    tau21 = tau21_true.copy()
+    tau31 = tau31_true.copy()
 
-    # Add optional noise (if desired)
+    # Optional noise
     if noise_std > 0:
         tau21 += np.random.normal(0, noise_std, size=num_samples)
         tau31 += np.random.normal(0, noise_std, size=num_samples)
 
-    # Calculate max_tau once, based on r_max and speed of sound
-    max_tau = r_max / speed_of_sound
-
-    # Filter samples that exceed max_tau
+    # Filter out anything outside physically possible window
+    max_tau    = r_max / speed_of_sound
     valid_mask = (np.abs(tau21) <= max_tau) & (np.abs(tau31) <= max_tau)
 
     df = pd.DataFrame({
         'tau21': tau21[valid_mask],
         'tau31': tau31[valid_mask],
-        'x': sources[:, 0][valid_mask],
-        'y': sources[:, 1][valid_mask]
+        'x':     sources[valid_mask, 0],
+        'y':     sources[valid_mask, 1]
     })
 
     return df
 
 if __name__ == '__main__':
-    df = generate_synthetic_dataset(
-        num_samples=config.NUM_SAMPLES,
-        side_length=config.SIDE_LENGTH,
-        r_min=config.PING_RADIUS_MIN,
-        r_max=config.PING_RADIUS_MAX,
-        noise_std=config.NOISE_STD,
-        fs=config.SAMPLE_RATE_FS
-    )
-    
+    df = generate_synthetic_dataset()
     np.savez_compressed(
         f'synthetic_ping_dataset_fs{config.SAMPLE_RATE_FS}.npz',
         tau21=df['tau21'].to_numpy(dtype='float64'),

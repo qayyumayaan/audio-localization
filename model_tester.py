@@ -102,36 +102,6 @@ for sd in sample_delays:
 # 5) Raw triangulation (bounded search)
 raw_est = triangulatePosition(audio, mic_positions, max_tau=max_tau)
 
-# 6) TDOAs for ML input
-# --- Print input to ML model (raw signal pairs before GCC-PHAT) ---
-print("Input to ML model (pre-GCC PHAT):")
-
-signals = [audio[0][1], audio[1][1], audio[2][1]]
-
-# Find the first nonzero index in any of the three signals
-first_nonzero_index = min(np.argmax(sig != 0) for sig in signals)
-
-# Define how many samples to show
-num_samples_to_show = 10
-end_index = first_nonzero_index + num_samples_to_show
-
-# Print the relevant slices
-for i, sig in enumerate(signals, 1):
-    print(f"Signal {i} [{first_nonzero_index}:{end_index}]: {sig[first_nonzero_index:end_index]}")
-
-tau21 = gcc_phat(audio[1][1], audio[0][1], fs, max_tau=max_tau)
-tau31 = gcc_phat(audio[2][1], audio[0][1], fs, max_tau=max_tau)
-
-print(f"TDOA from Mic 2 to 1: {tau21} \nTDOA from Mic 3 to 1: {tau31} \n Max tau (longest time delay expected between any two mics) {max_tau}")
-
-# 7) ML-corrected prediction
-model = joblib.load(f'ping_localization_model_fs{fs}.pkl')
-ml_est = model.predict([[tau21, tau31]])[0]
-
-# 8) Errors
-err_raw = np.linalg.norm(raw_est - B)
-err_ml  = np.linalg.norm(ml_est  - B)
-
 # --- Angle errors ---
 def compute_angle_error(est, true_pos):
     angle_est  = np.arctan2(est[1], est[0])
@@ -141,12 +111,34 @@ def compute_angle_error(est, true_pos):
     angle_err_deg = (angle_err_deg + 180) % 360 - 180
     return abs(angle_err_deg)
 
-angle_err_raw = compute_angle_error(raw_est, B)
-angle_err_ml  = compute_angle_error(ml_est, B)
 
-# 9) Report
-print(f"True position:             [{B[0]:.3f}, {B[1]:.3f}]")
-print(f"Raw estimate:              [{raw_est[0]:.3f}, {raw_est[1]:.3f}], error = {err_raw:.3f} m, angle error = {angle_err_raw:.2f}°")
-print(f"ML-corrected estimate:     [{ml_est[0]:.3f}, {ml_est[1]:.3f}], error = {err_ml:.3f} m, angle error = {angle_err_ml:.2f}°")
-error_reduction = 100 * (err_raw - err_ml) / err_raw
-print(f"Percent error reduction:   {error_reduction:.2f}%")
+# 1) Raw triangulation
+raw_est = triangulatePosition(audio, mic_positions, max_tau=max_tau)
+
+# 2) GCC-PHAT & ML input
+tau21 = gcc_phat(audio[1][1], audio[0][1], fs, max_tau=max_tau)
+tau31 = gcc_phat(audio[2][1], audio[0][1], fs, max_tau=max_tau)
+
+# 3) ML prediction
+model  = joblib.load(f'ping_localization_model_fs{fs}.pkl')
+ml_est = model.predict([[tau21, tau31]])[0]
+
+# 4) Compute errors
+err_raw = np.linalg.norm(raw_est - B)
+err_ml  = np.linalg.norm(ml_est  - B)
+
+# 5) Angle errors (as before)
+angle_err_raw = compute_angle_error(raw_est, B)
+angle_err_ml  = compute_angle_error(ml_est,  B)
+
+# 6) Report
+print(f"True position:  [{B[0]:.3f}, {B[1]:.3f}]")
+print(f"Raw estimate:   [{raw_est[0]:.3f}, {raw_est[1]:.3f}], err = {err_raw:.3f} m, θ_err = {angle_err_raw:.2f}°")
+print(f"ML estimate:    [{ml_est[0]:.3f}, {ml_est[1]:.3f}], err = {err_ml:.3f} m, θ_err = {angle_err_ml:.2f}°")
+
+within = err_ml <= config.ACCURACY_RADIUS
+print(f"Within ±{config.ACCURACY_RADIUS} m accuracy radius? {'Yes' if within else 'No'}")
+within = err_ml <= config.ACCURACY_RADIUS * 2
+print(f"Within ±{config.ACCURACY_RADIUS*2} m accuracy radius? {'Yes' if within else 'No'}")
+reduction = 100 * (err_raw - err_ml) / err_raw
+print(f"% error reduction: {reduction:.2f}%")

@@ -1,18 +1,17 @@
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-from sklearn.neural_network import MLPRegressor
-from sklearn.pipeline import Pipeline
-from sklearn.metrics import mean_squared_error, root_mean_squared_error, r2_score
+from sklearn.preprocessing    import StandardScaler
+from sklearn.neural_network   import MLPRegressor
+from sklearn.pipeline         import Pipeline
+from sklearn.metrics          import mean_squared_error, r2_score
 import joblib
 import config
 
 def train_and_save_model(
-    data_path: str = f'synthetic_ping_dataset_fs{config.SAMPLE_RATE_FS}.npz',
-    model_path: str = f'ping_localization_model_d{int(config.SIDE_LENGTH*1000)}mm_fs{config.SAMPLE_RATE_FS}.pkl',
-    test_size: float = 0.2,
-    random_state: int = 42
+    data_path  = f'synthetic_ping_dataset_fs{config.SAMPLE_RATE_FS}.npz',
+    model_path = f'ping_localization_model_d{int(config.SIDE_LENGTH*1000)}mm_fs{config.SAMPLE_RATE_FS}.pkl',
+    test_size=0.2, random_state=42
 ):
     # 1) Load data
     data = np.load(data_path)
@@ -22,9 +21,9 @@ def train_and_save_model(
         'x': data['x'],
         'y': data['y']
     })
-    
-    X = df[['tau21', 'tau31']].values
-    y = df[['x', 'y']].values
+
+    X = df[['tau21','tau31']].values
+    y = df[['x','y']].values
 
     # 2) Split
     X_train, X_test, y_train, y_test = train_test_split(
@@ -35,9 +34,8 @@ def train_and_save_model(
     # 3) Build pipeline: scaler + MLP regressor
     pipeline = Pipeline([
         ('scaler', StandardScaler()),
-        ('mlp', MLPRegressor(
-            # hidden_layer_sizes=(64, 64),
-            hidden_layer_sizes=(128, 128),
+        ('mlp',    MLPRegressor(
+            hidden_layer_sizes=(128,128),
             activation='relu',
             solver='adam',
             max_iter=500,
@@ -46,38 +44,33 @@ def train_and_save_model(
         ))
     ])
 
-    # 4) Train
+    # 3) Train
     print("Training model...")
     pipeline.fit(X_train, y_train)
 
-    # 5) Evaluate
-    print("Evaluating model...")
+    # 4) Evaluate
+    def report(name, X_split, y_true):
+        y_pred  = pipeline.predict(X_split)
+        mse     = mean_squared_error(y_true, y_pred)
+        rmse    = np.sqrt(mse)
+        r2      = r2_score(y_true, y_pred)
+        # fraction within the accuracy radius
+        errs    = np.linalg.norm(y_pred - y_true, axis=1)
+        acc_pct = np.mean(errs <= config.ACCURACY_RADIUS) * 100
 
-    # --- Training set metrics ---
-    y_train_pred = pipeline.predict(X_train)
-    train_mse = mean_squared_error(y_train, y_train_pred)
-    train_rmse = np.sqrt(train_mse)
-    train_r2 = r2_score(y_train, y_train_pred)
+        print(f"{name} set:")
+        print(f"  MSE:   {mse:.6f} m^2")
+        print(f"  RMSE:  {rmse:.6f} m")
+        print(f"  R²:    {r2:.6f}")
+        print(f"  Within ±{config.ACCURACY_RADIUS} m: {acc_pct:.2f}%\n")
 
-    # --- Test set metrics ---
-    y_test_pred = pipeline.predict(X_test)
-    test_mse = mean_squared_error(y_test, y_test_pred)
-    test_rmse = np.sqrt(test_mse)
-    test_r2 = r2_score(y_test, y_test_pred)
+    print("Evaluation:")
+    report("Training", X_train, y_train)
+    report("Test",     X_test,  y_test)
 
-    # --- Print results ---
-    print("Training set:")
-    print(f"MSE:   {train_mse:.6f} (m^2)")
-    print(f"RMSE:  {train_rmse:.6f}")
-    print(f"R^2:   {train_r2:.6f}\n")
-
-    print("Test set:")
-    print(f"MSE:   {test_mse:.6f} (m^2)")
-    print(f"RMSE:  {test_rmse:.6f}")
-    print(f"R^2:   {test_r2:.6f}")
-
-    # 6) Save pipeline
+    # 5) Save
     joblib.dump(pipeline, model_path)
-    print(f"Trained model saved to: {model_path}")
+    print("Trained model saved to:", model_path)
 
-train_and_save_model()
+if __name__ == '__main__':
+    train_and_save_model()
