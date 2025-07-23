@@ -3,6 +3,7 @@ import joblib
 from scipy.optimize import minimize
 from scipy.signal import chirp
 import config
+import math
 
 # --- Required functions ----------------------------------------------------
 
@@ -102,8 +103,26 @@ for sd in sample_delays:
 raw_est = triangulatePosition(audio, mic_positions, max_tau=max_tau)
 
 # 6) TDOAs for ML input
+# --- Print input to ML model (raw signal pairs before GCC-PHAT) ---
+print("Input to ML model (pre-GCC PHAT):")
+
+signals = [audio[0][1], audio[1][1], audio[2][1]]
+
+# Find the first nonzero index in any of the three signals
+first_nonzero_index = min(np.argmax(sig != 0) for sig in signals)
+
+# Define how many samples to show
+num_samples_to_show = 10
+end_index = first_nonzero_index + num_samples_to_show
+
+# Print the relevant slices
+for i, sig in enumerate(signals, 1):
+    print(f"Signal {i} [{first_nonzero_index}:{end_index}]: {sig[first_nonzero_index:end_index]}")
+
 tau21 = gcc_phat(audio[1][1], audio[0][1], fs, max_tau=max_tau)
 tau31 = gcc_phat(audio[2][1], audio[0][1], fs, max_tau=max_tau)
+
+print(f"TDOA from Mic 2 to 1: {tau21} \nTDOA from Mic 3 to 1: {tau31} \n Max tau (longest time delay expected between any two mics) {max_tau}")
 
 # 7) ML-corrected prediction
 model = joblib.load(f'ping_localization_model_fs{fs}.pkl')
