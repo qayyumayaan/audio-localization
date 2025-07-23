@@ -45,16 +45,22 @@ def generate_synthetic_dataset(num_samples=10000,
     tau21 = tau21_true 
     tau31 = tau31_true 
 
-    # Add optional noise AFTER quantization (if desired)
+    # Add optional noise (if desired)
     if noise_std > 0:
         tau21 += np.random.normal(0, noise_std, size=num_samples)
         tau31 += np.random.normal(0, noise_std, size=num_samples)
 
+    # Calculate max_tau once, based on r_max and speed of sound
+    max_tau = r_max / speed_of_sound
+
+    # Filter samples that exceed max_tau
+    valid_mask = (np.abs(tau21) <= max_tau) & (np.abs(tau31) <= max_tau)
+
     df = pd.DataFrame({
-        'tau21': tau21,
-        'tau31': tau31,
-        'x': sources[:, 0],
-        'y': sources[:, 1]
+        'tau21': tau21[valid_mask],
+        'tau31': tau31[valid_mask],
+        'x': sources[:, 0][valid_mask],
+        'y': sources[:, 1][valid_mask]
     })
 
     return df
