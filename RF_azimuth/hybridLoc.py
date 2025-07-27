@@ -1,15 +1,16 @@
 import numpy as np
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report, accuracy_score, mean_absolute_error
+from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import StandardScaler
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from audioSim import Mic, Environment, Wave, getEstTDOA
 
-# ----------- Multi-head MLP -----------
-class MultiHeadMLP(nn.Module):
+# ----------- Two separate MLPs -----------
+
+class AzimuthMLP(nn.Module):
     def __init__(self, input_size=2, hidden_sizes=[64, 256, 512, 1024]):
         super().__init__()
         self.shared = nn.Sequential(
@@ -24,12 +25,32 @@ class MultiHeadMLP(nn.Module):
             nn.Linear(hidden_sizes[1], hidden_sizes[0]),
             nn.ReLU()
         )
-        self.azimuth_head = nn.Linear(hidden_sizes[0], 2)  # sin, cos
-        self.distance_head = nn.Linear(hidden_sizes[0], 1)  # distance
+        self.output = nn.Linear(hidden_sizes[0], 2)  # sin, cos output
 
     def forward(self, x):
         x = self.shared(x)
-        return torch.cat([self.azimuth_head(x), self.distance_head(x)], dim=1)
+        return self.output(x)
+
+class DistanceMLP(nn.Module):
+    def __init__(self, input_size=2, hidden_sizes=[64, 256, 512, 1024]):
+        super().__init__()
+        self.shared = nn.Sequential(
+            nn.Linear(input_size, hidden_sizes[0]),
+            nn.ReLU(),
+            nn.Linear(hidden_sizes[0], hidden_sizes[1]),
+            nn.ReLU(),
+            nn.Linear(hidden_sizes[1], hidden_sizes[2]),
+            nn.ReLU(),
+            nn.Linear(hidden_sizes[2], hidden_sizes[1]),
+            nn.ReLU(),
+            nn.Linear(hidden_sizes[1], hidden_sizes[0]),
+            nn.ReLU()
+        )
+        self.output = nn.Linear(hidden_sizes[0], 1)  # distance output
+
+    def forward(self, x):
+        x = self.shared(x)
+        return self.output(x)
 
 # ----------- AzimuthRandomForest (unchanged) -----------
 class AzimuthRandomForest:
@@ -160,13 +181,6 @@ def train_model(model, X_train, y_train, X_val, y_val, epochs=100, batch_size=12
     model.eval()
     return model
 
-# ----------- Extract Features from Penultimate Layer -----------
-def extract_mlp_features(model, X):
-    with torch.no_grad():
-        X_tensor = torch.tensor(X, dtype=torch.float32)
-        h = model.shared(X_tensor)
-        return h.numpy()
-
 # ----------- Main -----------
 def main():
     rf = AzimuthRandomForest(n_estimators=500, max_depth=80, bins=48)
@@ -187,26 +201,46 @@ def main():
     rf_mae = np.mean(angular_diff(pred_azimuths, true_azimuths))
     print(f"\nRF Accuracy: {accuracy_score(y_test_bins, y_pred_bins):.3f}, MAE: {rf_mae:.2f}°")
 
-    # Prepare multi-head targets
+    # Prepare separate targets
     y_train_sincos = azimuth_to_sincos(y_train_angles)
     y_test_sincos = azimuth_to_sincos(y_test_angles)
-    y_train_reg = np.column_stack([y_train_sincos, y_train_dists])
-    y_test_reg = np.column_stack([y_test_sincos, y_test_dists])
 
-    # Train MLP
-    model = MultiHeadMLP()
-    model = train_model(model, X_train, y_train_reg, X_test, y_test_reg)
+    # Train Azimuth MLP
+    az_model = AzimuthMLP()
+    az_model = train_model(az_model, X_train, y_train_sincos, X_test, y_test_sincos)
 
+    # Train Distance MLP
+    # dist_model = DistanceMLP()
+    # dist_model = train_model(dist_model, X_train, y_train_dists.reshape(-1, 1), X_test, y_test_dists.reshape(-1, 1))
+
+    # Evaluate Azimuth MLP
     with torch.no_grad():
         X_test_tensor = torch.tensor(X_test, dtype=torch.float32)
-        preds = model(X_test_tensor).numpy()
-    pred_sincos = preds[:, :2]
-    pred_dist = preds[:, 2]
-    pred_angles = sincos_to_azimuth(pred_sincos)
+        az_pred_sincos = az_model(X_test_tensor).numpy()
+    pred_angles = sincos_to_azimuth(az_pred_sincos)
     mae_angle = np.mean(angular_diff(pred_angles, y_test_angles))
-    mae_dist = np.mean(np.abs(pred_dist - y_test_dists))
 
-    print(f"\nMLP Multi-head: Azimuth MAE = {mae_angle:.2f}°, Distance MAE = {mae_dist:.2f} m")
+    dist_scaler = StandardScaler()
+    y_train_dists_scaled = dist_scaler.fit_transform(y_train_dists.reshape(-1,1))
+    y_test_dists_scaled = dist_scaler.transform(y_test_dists.reshape(-1,1))
+    # Train distance MLP on scaled target:
+    dist_model = DistanceMLP()
+    dist_model = train_model(dist_model, X_train, y_train_dists_scaled, X_test, y_test_dists_scaled)
+    # When evaluating:
+    with torch.no_grad():
+        dist_pred_scaled = dist_model(torch.tensor(X_test, dtype=torch.float32)).numpy().flatten()
+    # Inverse transform predictions back to meters:
+    dist_pred = dist_scaler.inverse_transform(dist_pred_scaled.reshape(-1,1)).flatten()
+    mae_dist = np.mean(np.abs(dist_pred - y_test_dists))
+
+    # # Evaluate Distance MLP
+    # with torch.no_grad():
+    #     dist_pred = dist_model(X_test_tensor).numpy().flatten()
+    # mae_dist = np.mean(np.abs(dist_pred - y_test_dists))
+
+    print(f"\nMLP Separate: Azimuth MAE = {mae_angle:.2f}°, Distance MAE = {mae_dist:.2f} m")
+    torch.save(az_model.state_dict(), "models/mlp48kHz_azimuth.pt")
+
 
 if __name__ == "__main__":
     main()
