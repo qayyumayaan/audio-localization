@@ -88,8 +88,8 @@ class AzimuthRandomForest:
             env = Environment(mics, Wave((x_pos, y_pos)))
             
             # Get TDOA estimates (using the upper bound for consistency)
-            tdoa1 = getEstTDOA(mics[0], mics[1], env.getWave())[1]  # mic1 - mic0
-            tdoa2 = getEstTDOA(mics[0], mics[2], env.getWave())[1]  # mic2 - mic0
+            tdoa1 = getEstTDOA(mics[0], mics[1], env.getWave())  # mic1 - mic0
+            tdoa2 = getEstTDOA(mics[0], mics[2], env.getWave())  # mic2 - mic0
             
             # Scale TDOAs to microseconds for better numerical stability
             tdoa1_us = tdoa1 * 1e6
@@ -148,7 +148,9 @@ class AzimuthRandomForest:
         # Detailed classification report
         print("\nClassification Report:")
         target_names = [f"Bin_{i}: {self.azimuth_bins[i]:.0f}°" for i in range(len(self.azimuth_bins))]
-        print(classification_report(y_test, y_pred, target_names=target_names))
+        # print(classification_report(y_test, y_pred, target_names=target_names))
+        labels = list(range(len(self.azimuth_bins)))  # 0 to 11 inclusive
+        print(classification_report(y_test, y_pred, target_names=target_names, labels=labels))
         
         # Feature importance
         importance = self.rf_model.feature_importances_
@@ -156,6 +158,39 @@ class AzimuthRandomForest:
         print(f"TDOA1 (mic1-mic0): {importance[0]:.3f}")
         print(f"TDOA2 (mic2-mic0): {importance[1]:.3f}")
         
+        # ... existing code ...
+        y_pred = self.rf_model.predict(X_test_scaled)
+        accuracy = accuracy_score(y_test, y_pred)
+
+        # Convert predicted bins to azimuth angles
+        y_pred_azimuths = self.azimuth_bins[y_pred]
+        y_true_azimuths = self.azimuth_bins[y_test]
+
+        # Compute MAE in degrees
+        # Since angles wrap around, compute the minimal angular difference
+        def angular_diff(a, b):
+            diff = np.abs(a - b) % 360
+            return np.minimum(diff, 360 - diff)
+
+        mae = np.mean(angular_diff(y_pred_azimuths, y_true_azimuths))
+
+        print(f"Training completed!")
+        print(f"Test Accuracy: {accuracy:.3f}")
+        print(f"Mean Absolute Error (degrees): {mae:.2f}")
+        print(f"Training samples: {len(X_train)}")
+        print(f"Test samples: {len(X_test)}")
+
+        print("\nClassification Report:")
+        target_names = [f"Bin_{i}: {self.azimuth_bins[i]:.0f}°" for i in range(len(self.azimuth_bins))]
+        labels = list(range(len(self.azimuth_bins)))
+        print(classification_report(y_test, y_pred, target_names=target_names, labels=labels))
+
+        # Feature importance
+        importance = self.rf_model.feature_importances_
+        print(f"\nFeature Importance:")
+        print(f"TDOA1 (mic1-mic0): {importance[0]:.3f}")
+        print(f"TDOA2 (mic2-mic0): {importance[1]:.3f}")
+
         return X_test_scaled, y_test, y_pred
     
     def predict(self, tdoa1_us, tdoa2_us):
