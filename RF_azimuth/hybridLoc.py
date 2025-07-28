@@ -73,7 +73,7 @@ class AzimuthRandomForest:
 
     def generate_training_data(self, n_samples=25000, max_radius=100):
         print(f"Generating {n_samples} training samples...")
-        mics = [Mic((0, 0), 48000), Mic((0.05, 0), 48000), Mic((0.025, 0.0433), 48000)]
+        mics = [Mic((0, 0), 48000), Mic((1, 0), 48000), Mic((0.5, 0.866), 48000)]
         X = []
         y_bins = []
         y_angles = []
@@ -239,8 +239,8 @@ def main():
     # mae_dist = np.mean(np.abs(dist_pred - y_test_dists))
 
     print(f"\nMLP Separate: Azimuth MAE = {mae_angle:.2f}°, Distance MAE = {mae_dist:.2f} m")
-    torch.save(az_model.state_dict(), "models/mlp48kHz_azimuth.pt")
-
+    torch.save(az_model.state_dict(), "testModels/mlp48kHz_azimuth.pt")
+    torch.save(dist_model.state_dict(), "testModels/mlp48kHz_distance.pt")
 
 if __name__ == "__main__":
     main()
