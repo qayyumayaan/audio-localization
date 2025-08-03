@@ -1,6 +1,8 @@
+joblib
 numpy
 matplotlib
 scipy
 ipykernel
 pandas
 scikit-learn
+torch
