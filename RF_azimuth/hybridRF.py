@@ -7,6 +7,53 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from audioSim import Mic, Environment, Wave, getEstTDOA
+import matplotlib.pyplot as plt
+
+# --- Helper Plotting Functions ---
+def plot_epoch_loss(train_losses, val_losses):
+    plt.figure(figsize=(8, 5))
+    plt.plot(train_losses, label='Train Loss')
+    plt.plot(val_losses, label='Validation Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.title('Training vs Validation Loss')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+def plot_angle_error_cdf(error_dict):
+    plt.figure(figsize=(8, 5))
+    for label, errors in error_dict.items():
+        sorted_err = np.sort(errors)
+        cdf = np.arange(len(errors)) / len(errors)
+        plt.plot(sorted_err, cdf, label=label)
+    plt.xlabel('Angular Error (°)')
+    plt.ylabel('CDF')
+    plt.title('CDF of Angular Errors')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+def plot_error_boxplots(error_dict):
+    plt.figure(figsize=(8, 5))
+    data = list(error_dict.values())
+    labels = list(error_dict.keys())
+    plt.boxplot(data, labels=labels)
+    plt.ylabel('Angular Error (°)')
+    plt.title('Angular Error Distribution')
+    plt.grid(True)
+    plt.show()
+
+def plot_ablation_study(maes, labels):
+    plt.figure(figsize=(8, 5))
+    plt.bar(labels, maes, color='skyblue')
+    plt.ylabel('Mean Absolute Error (°)')
+    plt.title('Ablation Study Results')
+    plt.xticks(rotation=45)
+    plt.grid(True, axis='y')
+    plt.tight_layout()
+    plt.show()
+
 
 # ----------- Existing AzimuthMLP -----------
 class AzimuthMLP(nn.Module):
@@ -185,7 +232,7 @@ def angular_diff(a, b):
     return np.minimum(diff, 360 - diff)
 
 # ----------- Training function for MLP, Fourier MLP, SIREN -----------
-def train_model(model, X_train, y_train, X_val, y_val, epochs=200, batch_size=128, lr=1e-3):
+def train_model(model, X_train, y_train, X_val, y_val, epochs=20, batch_size=128, lr=1e-3):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
     criterion = nn.MSELoss()
@@ -196,6 +243,8 @@ def train_model(model, X_train, y_train, X_val, y_val, epochs=200, batch_size=12
     X_val_tensor = torch.tensor(X_val, dtype=torch.float32).to(device)
     y_val_tensor = torch.tensor(y_val, dtype=torch.float32).to(device)
 
+    train_losses = []
+    val_losses = []
     best_val_loss = np.inf
     best_model_state = None
 
@@ -223,6 +272,9 @@ def train_model(model, X_train, y_train, X_val, y_val, epochs=200, batch_size=12
             val_outputs = model(X_val_tensor)
             val_loss = criterion(val_outputs, y_val_tensor).item()
 
+        train_losses.append(epoch_loss)
+        val_losses.append(val_loss)
+
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             best_model_state = model.state_dict()
@@ -232,7 +284,7 @@ def train_model(model, X_train, y_train, X_val, y_val, epochs=200, batch_size=12
 
     model.load_state_dict(best_model_state)
     model.eval()
-    return model
+    return model, train_losses, val_losses
 
 # ----------- Feature extraction from MLP penultimate layer -----------
 def extract_mlp_features(model, X):
@@ -277,8 +329,8 @@ def main():
     # ------------- Train MLP ----------------
     y_train_sincos = azimuth_to_sincos(y_train_angles)
     y_test_sincos = azimuth_to_sincos(y_test_angles)
-    mlp_model = AzimuthMLP()
-    mlp_model = train_model(mlp_model, X_train, y_train_sincos, X_test, y_test_sincos, epochs=200, batch_size=128)
+    mlp_model, mlp_train_losses, mlp_val_losses = train_model(AzimuthMLP(), X_train, y_train_sincos, X_test, y_test_sincos, epochs=200, batch_size=128)
+    plot_epoch_loss(mlp_train_losses, mlp_val_losses)
 
     mlp_model.eval()
     with torch.no_grad():
@@ -289,24 +341,22 @@ def main():
     print(f"\nMLP Regressor test MAE: {mae_mlp:.2f}°")
 
     # ------------- Train Fourier Feature MLP ----------------
-    fourier_mlp_model = FourierFeatureMLP()
-    fourier_mlp_model = train_model(fourier_mlp_model, X_train, y_train_sincos, X_test, y_test_sincos, epochs=200, batch_size=128)
+    fourier_mlp_model, ff_train_losses, ff_val_losses = train_model(FourierFeatureMLP(), X_train, y_train_sincos, X_test, y_test_sincos, epochs=200, batch_size=128)
+    plot_epoch_loss(ff_train_losses, ff_val_losses)
 
     fourier_mlp_model.eval()
     with torch.no_grad():
-        X_test_tensor = torch.tensor(X_test, dtype=torch.float32)
         ff_preds_sincos = fourier_mlp_model(X_test_tensor).numpy()
     ff_preds_angles = sincos_to_azimuth(ff_preds_sincos)
     mae_fourier = np.mean(angular_diff(ff_preds_angles, y_test_angles))
     print(f"\nFourier Feature MLP test MAE: {mae_fourier:.2f}°")
 
     # ------------- Train SIREN ----------------
-    siren_model = SIREN()
-    siren_model = train_model(siren_model, X_train, y_train_sincos, X_test, y_test_sincos, epochs=200, batch_size=128)
+    siren_model, siren_train_losses, siren_val_losses = train_model(SIREN(), X_train, y_train_sincos, X_test, y_test_sincos, epochs=8, batch_size=128)
+    plot_epoch_loss(siren_train_losses, siren_val_losses)
 
     siren_model.eval()
     with torch.no_grad():
-        X_test_tensor = torch.tensor(X_test, dtype=torch.float32)
         siren_preds_sincos = siren_model(X_test_tensor).numpy()
     siren_preds_angles = sincos_to_azimuth(siren_preds_sincos)
     mae_siren = np.mean(angular_diff(siren_preds_angles, y_test_angles))
@@ -322,7 +372,22 @@ def main():
     mae_rf_on_mlp = mean_absolute_error(y_test_angles, preds_rf_on_mlp)
     print(f"\nHybrid RF on MLP features MAE: {mae_rf_on_mlp:.2f}°")
 
-    # --- You can add saving models here if desired ---
+    # --- Plots for all models ---
+    error_dict = {
+        "RF": angular_diff(y_pred_az_rf, y_true_az_rf),
+        "MLP": angular_diff(mlp_preds_angles, y_test_angles),
+        "Fourier MLP": angular_diff(ff_preds_angles, y_test_angles),
+        "SIREN": angular_diff(siren_preds_angles, y_test_angles),
+        "Hybrid RF-MLP": angular_diff(preds_rf_on_mlp, y_test_angles)
+    }
+
+    plot_angle_error_cdf(error_dict)
+    plot_error_boxplots(error_dict)
+    plot_ablation_study(
+        [mae_rf, mae_mlp, mae_fourier, mae_siren, mae_rf_on_mlp],
+        ["RF", "MLP", "Fourier", "SIREN", "Hybrid"]
+    )
+
     torch.save(mlp_model.state_dict(), "mlp_model.pt")
 
     return {
@@ -332,7 +397,6 @@ def main():
         "siren_model": siren_model,
         "rf_on_mlp": rf_on_mlp
     }
-
 
 if __name__ == "__main__":
     main()
