@@ -75,6 +75,37 @@ def plot_ablation_study(maes, labels):
     # plt.show()
     plt.savefig('Ablation_Study.png')
 
+def plot_error_violins(error_dict):
+    plt.figure(figsize=(8, 5))
+    data = list(error_dict.values())
+    labels = list(error_dict.keys())
+
+    # Create the violins
+    parts = plt.violinplot(
+        data,
+        showmeans=True,    # show mean marker
+        showmedians=True,  # show median marker
+        widths=0.7
+    )
+
+    # Style the violins (optional)
+    for pc in parts['bodies']:
+        pc.set_alpha(0.6)
+    parts['cmeans'].set_edgecolor('black')
+    parts['cmedians'].set_edgecolor('red')
+
+    # X-axis labels
+    plt.xticks(range(1, len(labels) + 1), labels, rotation=45, ha='right')
+
+    # Y-axis limits & labels
+    plt.ylim([0, 25])  # adjust as needed
+    plt.ylabel('Angular Error (°)')
+    plt.title('Angular Error Distribution (Violin Plot)')
+    plt.grid(True, axis='y')
+
+    # Save to a new file
+    plt.tight_layout()
+    plt.savefig('Angle_Error_Violins.png')
 
 # ----------- Existing AzimuthMLP -----------
 class AzimuthMLP(nn.Module):
@@ -396,6 +427,7 @@ def main():
     plot_angle_error_pdf(error_dict)
     plot_error_boxplots(error_dict)
     plot_ablation_study(maes, labels)
+    plot_error_violins(error_dict)
 
     return {
         "rf_classifier": rf_azimuth,
