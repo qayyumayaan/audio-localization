@@ -22,16 +22,28 @@ def plot_epoch_loss(train_losses, val_losses):
     plt.grid(True, which='both')
     plt.show()
 
-
 def plot_angle_error_cdf(error_dict):
     plt.figure(figsize=(8, 5))
     for label, errors in error_dict.items():
         sorted_err = np.sort(errors)
         cdf = np.arange(len(errors)) / len(errors)
         plt.plot(sorted_err, cdf, label=label)
+    plt.xlim([0, 10])  # Crop x-axis to 10 degrees
     plt.xlabel('Angular Error (°)')
     plt.ylabel('CDF')
-    plt.title('CDF of Angular Errors')
+    plt.title('CDF of Angular Errors (0–10°)')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+def plot_angle_error_pdf(error_dict, bins=100):
+    plt.figure(figsize=(8, 5))
+    for label, errors in error_dict.items():
+        plt.hist(errors, bins=bins, density=True, alpha=0.5, label=label, histtype='stepfilled')
+    plt.xlim([0, 10])  # Crop to 10 degrees
+    plt.xlabel('Angular Error (°)')
+    plt.ylabel('Density')
+    plt.title('PDF of Angular Errors (0–10°)')
     plt.legend()
     plt.grid(True)
     plt.show()
@@ -163,7 +175,7 @@ class AzimuthRandomForest:
     
     def generate_training_data(self, n_samples=10000, max_radius=100):
         print(f"Generating {n_samples} training samples...")
-        mics = [Mic((0, 0), 48000), Mic((0.05, 0), 48000), Mic((0.025, 0.0433), 48000)]
+        mics = [Mic((0, 0), 10000), Mic((0.05, 0), 10000), Mic((0.025, 0.0433), 10000)]
         X = []
         y_bins = []
         y_angles = []
@@ -374,6 +386,7 @@ def main():
     labels = list(error_dict.keys())
 
     plot_angle_error_cdf(error_dict)
+    plot_angle_error_pdf(error_dict)
     plot_error_boxplots(error_dict)
     plot_ablation_study(maes, labels)
 
