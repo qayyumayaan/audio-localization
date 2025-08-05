@@ -13,8 +13,8 @@ from triangulateSim import estimate_azimuth
 # --- Helper Plotting Functions ---
 def plot_epoch_loss(train_losses, val_losses):
     plt.figure(figsize=(8, 5))
-    plt.semilogy(train_losses, label='Train Loss')
-    plt.semilogy(val_losses, label='Validation Loss')
+    plt.loglog(train_losses, label='Train Loss')
+    plt.loglog(val_losses, label='Validation Loss')
     plt.xlabel('Epoch')
     plt.ylabel('Loss (log scale)')
     plt.title('Training vs Validation Loss (log scale)')
@@ -316,7 +316,7 @@ def main():
     rf_azimuth = AzimuthRandomForest(n_estimators=500, max_depth=80, random_state=42, bins=96)
 
     # Generate data
-    X_raw, y_bins, y_angles = rf_azimuth.generate_training_data(n_samples=25000, max_radius=100)
+    X_raw, y_bins, y_angles = rf_azimuth.generate_training_data(n_samples=2500, max_radius=100)
 
     # Train/test split
     X_train_raw, X_test_raw, y_train_bins, y_test_bins, y_train_angles, y_test_angles = train_test_split(
