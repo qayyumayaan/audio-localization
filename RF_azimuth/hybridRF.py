@@ -20,7 +20,8 @@ def plot_epoch_loss(train_losses, val_losses):
     plt.title('Training vs Validation Loss (log scale)')
     plt.legend()
     plt.grid(True, which='both')
-    plt.show()
+    # plt.show()
+    plt.savefig('Epoch_Loss.png')
 
 def plot_angle_error_cdf(error_dict):
     plt.figure(figsize=(8, 5))
@@ -34,7 +35,8 @@ def plot_angle_error_cdf(error_dict):
     plt.title('CDF of Angular Errors (0–10°)')
     plt.legend()
     plt.grid(True)
-    plt.show()
+    # plt.show()
+    plt.savefig('Angle_Error_CDF.png')
 
 def plot_angle_error_pdf(error_dict, bins=100):
     plt.figure(figsize=(8, 5))
@@ -46,17 +48,21 @@ def plot_angle_error_pdf(error_dict, bins=100):
     plt.title('PDF of Angular Errors (0–10°)')
     plt.legend()
     plt.grid(True)
-    plt.show()
+    # plt.show()
+    plt.savefig('Angle_Error_PDF.png')
 
 def plot_error_boxplots(error_dict):
     plt.figure(figsize=(8, 5))
     data = list(error_dict.values())
     labels = list(error_dict.keys())
     plt.boxplot(data, labels=labels)
+    plt.ylim([0, 25])  # Crop to 25 degrees
+    
     plt.ylabel('Angular Error (°)')
     plt.title('Angular Error Distribution')
     plt.grid(True)
-    plt.show()
+    # plt.show()
+    plt.savefig('Angle_Error_Box_Plots.png')
 
 def plot_ablation_study(maes, labels):
     plt.figure(figsize=(8, 5))
@@ -66,7 +72,8 @@ def plot_ablation_study(maes, labels):
     plt.xticks(rotation=45)
     plt.grid(True, axis='y')
     plt.tight_layout()
-    plt.show()
+    # plt.show()
+    plt.savefig('Ablation_Study.png')
 
 
 # ----------- Existing AzimuthMLP -----------
