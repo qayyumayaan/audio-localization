@@ -8,18 +8,20 @@ import torch.nn as nn
 import torch.optim as optim
 from audioSim import Mic, Environment, Wave, getEstTDOA
 import matplotlib.pyplot as plt
+from triangulateSim import estimate_azimuth
 
 # --- Helper Plotting Functions ---
 def plot_epoch_loss(train_losses, val_losses):
     plt.figure(figsize=(8, 5))
-    plt.plot(train_losses, label='Train Loss')
-    plt.plot(val_losses, label='Validation Loss')
+    plt.semilogy(train_losses, label='Train Loss')
+    plt.semilogy(val_losses, label='Validation Loss')
     plt.xlabel('Epoch')
-    plt.ylabel('Loss')
-    plt.title('Training vs Validation Loss')
+    plt.ylabel('Loss (log scale)')
+    plt.title('Training vs Validation Loss (log scale)')
     plt.legend()
-    plt.grid(True)
+    plt.grid(True, which='both')
     plt.show()
+
 
 def plot_angle_error_cdf(error_dict):
     plt.figure(figsize=(8, 5))
@@ -161,7 +163,7 @@ class AzimuthRandomForest:
     
     def generate_training_data(self, n_samples=10000, max_radius=100):
         print(f"Generating {n_samples} training samples...")
-        mics = [Mic((0, 0), 10000), Mic((0.05, 0), 10000), Mic((0.025, 0.0433), 10000)]
+        mics = [Mic((0, 0), 48000), Mic((0.05, 0), 48000), Mic((0.025, 0.0433), 48000)]
         X = []
         y_bins = []
         y_angles = []
@@ -301,102 +303,89 @@ def extract_mlp_features(model, X):
 def main():
     rf_azimuth = AzimuthRandomForest(n_estimators=500, max_depth=80, random_state=42, bins=96)
 
-    # Generate data (same for all models)
+    # Generate data
     X_raw, y_bins, y_angles = rf_azimuth.generate_training_data(n_samples=25000, max_radius=100)
 
-    # Train/test split (same split for all)
+    # Train/test split
     X_train_raw, X_test_raw, y_train_bins, y_test_bins, y_train_angles, y_test_angles = train_test_split(
         X_raw, y_bins, y_angles, test_size=0.2, random_state=42, stratify=y_bins
     )
-
-    # Scale raw features for RF and MLP
     scaler = StandardScaler()
     X_train = scaler.fit_transform(X_train_raw)
     X_test = scaler.transform(X_test_raw)
 
-    # ---------------- RF Baseline ----------------
+    # --- Baseline RF ---
     rf_azimuth.rf_model.fit(X_train, y_train_bins)
     rf_azimuth.is_trained = True
     y_pred_rf = rf_azimuth.rf_model.predict(X_test)
-
     y_pred_az_rf = rf_azimuth.azimuth_bins[y_pred_rf]
     y_true_az_rf = rf_azimuth.azimuth_bins[y_test_bins]
     mae_rf = np.mean(angular_diff(y_pred_az_rf, y_true_az_rf))
-    acc_rf = accuracy_score(y_test_bins, y_pred_rf)
-    print(f"\nBaseline RF Classifier on raw scaled inputs:")
-    print(f"Accuracy: {acc_rf:.3f}, MAE: {mae_rf:.2f}°")
 
-    # ------------- Train MLP ----------------
+    # --- MLP ---
     y_train_sincos = azimuth_to_sincos(y_train_angles)
     y_test_sincos = azimuth_to_sincos(y_test_angles)
-    mlp_model, mlp_train_losses, mlp_val_losses = train_model(AzimuthMLP(), X_train, y_train_sincos, X_test, y_test_sincos, epochs=200, batch_size=128)
+    mlp_model, mlp_train_losses, mlp_val_losses = train_model(AzimuthMLP(), X_train, y_train_sincos, X_test, y_test_sincos, epochs=200)
     plot_epoch_loss(mlp_train_losses, mlp_val_losses)
-
-    mlp_model.eval()
-    with torch.no_grad():
-        X_test_tensor = torch.tensor(X_test, dtype=torch.float32)
-        mlp_preds_sincos = mlp_model(X_test_tensor).numpy()
-    mlp_preds_angles = sincos_to_azimuth(mlp_preds_sincos)
+    mlp_preds_angles = sincos_to_azimuth(mlp_model(torch.tensor(X_test, dtype=torch.float32)).detach().numpy())
     mae_mlp = np.mean(angular_diff(mlp_preds_angles, y_test_angles))
-    print(f"\nMLP Regressor test MAE: {mae_mlp:.2f}°")
 
-    # ------------- Train Fourier Feature MLP ----------------
-    fourier_mlp_model, ff_train_losses, ff_val_losses = train_model(FourierFeatureMLP(), X_train, y_train_sincos, X_test, y_test_sincos, epochs=200, batch_size=128)
+    # --- Fourier MLP ---
+    ff_model, ff_train_losses, ff_val_losses = train_model(FourierFeatureMLP(), X_train, y_train_sincos, X_test, y_test_sincos, epochs=200)
     plot_epoch_loss(ff_train_losses, ff_val_losses)
+    ff_preds_angles = sincos_to_azimuth(ff_model(torch.tensor(X_test, dtype=torch.float32)).detach().numpy())
+    mae_ff = np.mean(angular_diff(ff_preds_angles, y_test_angles))
 
-    fourier_mlp_model.eval()
-    with torch.no_grad():
-        ff_preds_sincos = fourier_mlp_model(X_test_tensor).numpy()
-    ff_preds_angles = sincos_to_azimuth(ff_preds_sincos)
-    mae_fourier = np.mean(angular_diff(ff_preds_angles, y_test_angles))
-    print(f"\nFourier Feature MLP test MAE: {mae_fourier:.2f}°")
-
-    # ------------- Train SIREN ----------------
-    siren_model, siren_train_losses, siren_val_losses = train_model(SIREN(), X_train, y_train_sincos, X_test, y_test_sincos, epochs=8, batch_size=128)
+    # --- SIREN ---
+    siren_model, siren_train_losses, siren_val_losses = train_model(SIREN(), X_train, y_train_sincos, X_test, y_test_sincos, epochs=8)
     plot_epoch_loss(siren_train_losses, siren_val_losses)
-
-    siren_model.eval()
-    with torch.no_grad():
-        siren_preds_sincos = siren_model(X_test_tensor).numpy()
-    siren_preds_angles = sincos_to_azimuth(siren_preds_sincos)
+    siren_preds_angles = sincos_to_azimuth(siren_model(torch.tensor(X_test, dtype=torch.float32)).detach().numpy())
     mae_siren = np.mean(angular_diff(siren_preds_angles, y_test_angles))
-    print(f"\nSIREN test MAE: {mae_siren:.2f}°")
 
-    # ------------- Hybrid RF on MLP features -------------
-    mlp_features_train = extract_mlp_features(mlp_model, X_train)
-    mlp_features_test = extract_mlp_features(mlp_model, X_test)
-
-    rf_on_mlp = RandomForestRegressor(n_estimators=200, max_depth=20, random_state=42, n_jobs=-1)
-    rf_on_mlp.fit(mlp_features_train, y_train_angles)
-    preds_rf_on_mlp = rf_on_mlp.predict(mlp_features_test)
+    # --- Hybrid RF on MLP features ---
+    mlp_feat_train = extract_mlp_features(mlp_model, X_train)
+    mlp_feat_test = extract_mlp_features(mlp_model, X_test)
+    rf_on_mlp = RandomForestRegressor(n_estimators=200, max_depth=20, random_state=42)
+    rf_on_mlp.fit(mlp_feat_train, y_train_angles)
+    preds_rf_on_mlp = rf_on_mlp.predict(mlp_feat_test)
     mae_rf_on_mlp = mean_absolute_error(y_test_angles, preds_rf_on_mlp)
-    print(f"\nHybrid RF on MLP features MAE: {mae_rf_on_mlp:.2f}°")
 
-    # --- Plots for all models ---
+    # --- Vanilla Algorithm Predictions ---
+    mic_positions = [[0, 0], [0.05, 0], [0.025, 0.0433]]
+    vanilla_preds = []
+    for row in X_test_raw:
+        tdoas = [row[0] * 1e-6, row[1] * 1e-6]  # convert µs to sec
+        vanilla_angle = estimate_azimuth(tdoas, mic_positions)
+        vanilla_preds.append(vanilla_angle)
+    vanilla_preds = np.array(vanilla_preds)
+    mae_vanilla = np.mean(angular_diff(vanilla_preds, y_test_angles))
+
+    # --- Evaluation ---
     error_dict = {
+        "Vanilla": angular_diff(vanilla_preds, y_test_angles),
         "RF": angular_diff(y_pred_az_rf, y_true_az_rf),
         "MLP": angular_diff(mlp_preds_angles, y_test_angles),
-        "Fourier MLP": angular_diff(ff_preds_angles, y_test_angles),
+        "Fourier": angular_diff(ff_preds_angles, y_test_angles),
         "SIREN": angular_diff(siren_preds_angles, y_test_angles),
-        "Hybrid RF-MLP": angular_diff(preds_rf_on_mlp, y_test_angles)
+        "Hybrid RF-MLP": angular_diff(preds_rf_on_mlp, y_test_angles),
     }
+
+    maes = [mae_vanilla, mae_rf, mae_mlp, mae_ff, mae_siren, mae_rf_on_mlp]
+    labels = list(error_dict.keys())
 
     plot_angle_error_cdf(error_dict)
     plot_error_boxplots(error_dict)
-    plot_ablation_study(
-        [mae_rf, mae_mlp, mae_fourier, mae_siren, mae_rf_on_mlp],
-        ["RF", "MLP", "Fourier", "SIREN", "Hybrid"]
-    )
-
-    torch.save(mlp_model.state_dict(), "mlp_model.pt")
+    plot_ablation_study(maes, labels)
 
     return {
         "rf_classifier": rf_azimuth,
         "mlp_model": mlp_model,
-        "fourier_mlp": fourier_mlp_model,
+        "fourier_mlp": ff_model,
         "siren_model": siren_model,
-        "rf_on_mlp": rf_on_mlp
+        "rf_on_mlp": rf_on_mlp,
+        "vanilla_mae": mae_vanilla
     }
+
 
 if __name__ == "__main__":
     main()
