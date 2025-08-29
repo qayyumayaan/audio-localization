@@ -32,7 +32,7 @@ class AzimuthMLP(nn.Module):
         return self.output(x)
 
 class DistanceMLP(nn.Module):
-    def __init__(self, input_size=2, hidden_sizes=[64, 256, 512, 1024]):
+    def __init__(self, input_size=2, hidden_sizes=[1024, 1024, 1024, 1024]):
         super().__init__()
         self.shared = nn.Sequential(
             nn.Linear(input_size, hidden_sizes[0]),
@@ -44,6 +44,10 @@ class DistanceMLP(nn.Module):
             nn.Linear(hidden_sizes[2], hidden_sizes[1]),
             nn.ReLU(),
             nn.Linear(hidden_sizes[1], hidden_sizes[0]),
+            nn.ReLU(),
+            nn.Linear(hidden_sizes[0], hidden_sizes[0]),
+            nn.ReLU(),
+            nn.Linear(hidden_sizes[0], hidden_sizes[0]),
             nn.ReLU()
         )
         self.output = nn.Linear(hidden_sizes[0], 1)  # distance output
@@ -73,7 +77,7 @@ class AzimuthRandomForest:
 
     def generate_training_data(self, n_samples=25000, max_radius=100):
         print(f"Generating {n_samples} training samples...")
-        mics = [Mic((0, 0), 48000), Mic((1, 0), 48000), Mic((0.5, 0.866), 48000)]
+        mics = [Mic((0, 0), 192000), Mic((10, 0), 192000), Mic((5, 8.66), 192000)]
         X = []
         y_bins = []
         y_angles = []
